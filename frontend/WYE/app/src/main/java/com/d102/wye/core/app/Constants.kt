@@ -20,7 +20,7 @@ object Constants {
 
     // Database
     const val DATABASE_NAME = "etf_database"
-    const val DATABASE_VERSION = 4
+    const val DATABASE_VERSION = 5
 
 
     // Error Messages

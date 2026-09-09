@@ -39,12 +39,6 @@ interface EtfPriceHistoryDao {
     ): List<EtfPriceHistoryEntity>
 
     /**
-     * ticker 기준 데이터 존재 여부 확인
-     */
-    @Query("SELECT COUNT(*) FROM etf_price_history WHERE ticker = :ticker")
-    suspend fun countByTicker(ticker: String): Int
-
-    /**
      * ticker 기준 삭제 (ETF 제거 시)
      */
     @Query("DELETE FROM etf_price_history WHERE ticker = :ticker")

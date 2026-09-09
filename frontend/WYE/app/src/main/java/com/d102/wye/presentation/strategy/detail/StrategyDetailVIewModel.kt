@@ -9,6 +9,7 @@ import com.d102.wye.domain.repository.PortfolioRepository
 import com.d102.wye.domain.repository.SimulationRepository
 import com.d102.wye.domain.state.InvestmentType
 import com.d102.wye.domain.usecase.portfolio.CalculatePortfolioChartUseCase
+import com.d102.wye.domain.usecase.simulation.RefreshPriceHistoryCacheUseCase
 import com.d102.wye.presentation.model.UiState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
@@ -27,6 +28,7 @@ class StrategyDetailViewModel @Inject constructor(
     private val simulationRepository: SimulationRepository,
     private val calculatePortfolioChart: CalculatePortfolioChartUseCase,
     private val newsRepository: NewsRepository,
+    private val refreshPriceHistoryCache: RefreshPriceHistoryCacheUseCase,
 ) : ViewModel() {
 
     private val portfolioId: Long = checkNotNull(savedStateHandle["strategyId"])
@@ -56,29 +58,11 @@ class StrategyDetailViewModel @Inject constructor(
             val endDate = today.toString()
             val startDate = detail.createdAt.minusOneYear()
 
-            // 2. 가격이력 증분 업데이트 (DB 캐시 우선)
-            tickers.forEach { ticker ->
-                val lastCachedDate = simulationRepository.getLastCachedDate(ticker)
-                val needsFetch = lastCachedDate == null || lastCachedDate < endDate
-
-                if (needsFetch) {
-                    val fetchStart = if (lastCachedDate != null) {
-                        LocalDate.parse(lastCachedDate).plusDays(1).toString()
-                    } else {
-                        today.minusYears(3).toString()
-                    }
-                    Timber.d("[Detail] 증분 조회 | ticker=$ticker | $fetchStart ~ $endDate")
-
-                    when (val result = simulationRepository.getEtfPriceHistories(
-                        tickers = listOf(ticker),
-                        startDate = fetchStart,
-                        endDate = endDate
-                    )) {
-                        is BaseResult.Success -> simulationRepository.savePriceHistories(result.data)
-                        is BaseResult.Error -> Timber.e("[Detail] 가격이력 실패 | ticker=$ticker | ${result.error.message}")
-                    }
-                } else {
-                    Timber.d("[Detail] DB 캐시 사용 | ticker=$ticker | lastDate=$lastCachedDate")
+            // 2. 공통 캐시 정책에 따라 가격 이력 갱신
+            when (val result = refreshPriceHistoryCache(tickers)) {
+                is BaseResult.Success -> Unit
+                is BaseResult.Error -> {
+                    Timber.e("[Detail] 가격 이력 갱신 실패 | ${result.error.message}")
                 }
             }
 
