@@ -1,0 +1,101 @@
+# Compiled class files
+*.class
+
+# Log files
+*.log
+logs/
+
+# Package files
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
+*.xlsx
+
+# Gradle
+.gradle/
+build/
+!**/gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# IDE - IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+
+# IDE - Eclipse
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+
+# IDE - VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+*.env.local
+*.env.*.local
+
+# Local credentials and machine-specific configuration
+**/local.properties
+**/google-services.json
+*.keystore
+*.jks
+*.p12
+
+# Application
+application-local.yml
+application-local.properties
+application-secret.yml
+application-secret.properties
+
+# Database exports may contain private or licensed data
+**/*dump*.sql
+docs/sql/init/remote_*.sql
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+.venv/
+*.egg-info/
+dist/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Test
+/test-output/
+
+# Claude
+claude.md
+CLAUDE.md
+.claude/
+
+# Sample data
+sample/
