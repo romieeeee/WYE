@@ -7,6 +7,7 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -22,6 +23,21 @@ class RefreshPriceHistoryCacheUseCase @Inject constructor(
         tickers: List<String>,
         now: ZonedDateTime = ZonedDateTime.now(MARKET_ZONE)
     ): BaseResult<Unit> = refreshMutex.withLock {
+        try {
+            refresh(tickers, now)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            BaseResult.Error(
+                ApiError.unknownError(e.message ?: "가격 이력 캐시 갱신에 실패했습니다")
+            )
+        }
+    }
+
+    private suspend fun refresh(
+        tickers: List<String>,
+        now: ZonedDateTime
+    ): BaseResult<Unit> {
         val distinctTickers = tickers.distinct()
         val nowEpochMillis = now.toInstant().toEpochMilli()
 
@@ -32,8 +48,9 @@ class RefreshPriceHistoryCacheUseCase @Inject constructor(
         cleanUnusedCacheIfNeeded(now, nowEpochMillis)
 
         distinctTickers.forEach { ticker ->
+            val lastCachedDate = simulationRepository.getLastCachedDate(ticker)
             val refreshPlan = cachePolicy.createRefreshPlan(
-                lastCachedDate = simulationRepository.getLastCachedDate(ticker),
+                lastCachedDate = lastCachedDate,
                 lastSuccessfulSyncEpochMillis =
                     simulationRepository.getLastSuccessfulPriceHistorySync(ticker),
                 now = now
@@ -44,12 +61,17 @@ class RefreshPriceHistoryCacheUseCase @Inject constructor(
                 startDate = refreshPlan.startDate,
                 endDate = refreshPlan.endDate
             )) {
-                is BaseResult.Error -> return@withLock result
+                is BaseResult.Error -> return result
                 is BaseResult.Success -> {
                     val history = result.data[ticker]
-                        ?: return@withLock BaseResult.Error(
+                        ?: return BaseResult.Error(
                             ApiError.unknownError("$ticker 가격 이력 조회에 실패했습니다")
                         )
+                    if (lastCachedDate == null && history.content.isEmpty()) {
+                        return BaseResult.Error(
+                            ApiError.unknownError("$ticker 가격 이력 데이터가 없습니다")
+                        )
+                    }
                     simulationRepository.savePriceHistories(mapOf(ticker to history))
                     simulationRepository.markPriceHistorySyncSuccessful(
                         ticker = ticker,
@@ -59,7 +81,7 @@ class RefreshPriceHistoryCacheUseCase @Inject constructor(
             }
         }
 
-        BaseResult.Success(Unit)
+        return BaseResult.Success(Unit)
     }
 
     private suspend fun cleanUnusedCacheIfNeeded(
