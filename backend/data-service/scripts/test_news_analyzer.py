@@ -2,7 +2,7 @@
 GPT-4o 뉴스 분석 테스트 스크립트
 
 사용법:
-    cd C:\SSAFY\project2team\backend\data-service
+    cd backend/data-service
     python -m scripts.test_news_analyzer
 """
 import sys

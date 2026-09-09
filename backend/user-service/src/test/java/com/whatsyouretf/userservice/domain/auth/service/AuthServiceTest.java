@@ -98,11 +98,9 @@ class AuthServiceTest {
         @DisplayName("정상적인 회원가입 요청 시 인증 이메일이 발송된다")
         void signup_Success() {
             // given
-            SignupRequest request = new SignupRequest(TEST_EMAIL, TEST_PASSWORD, TEST_PASSWORD, TEST_NICKNAME);
+            SignupRequest request = new SignupRequest(TEST_EMAIL);
 
             given(userRepository.existsByEmail(TEST_EMAIL)).willReturn(false);
-            given(userRepository.existsByNickname(TEST_NICKNAME)).willReturn(false);
-            given(passwordEncoder.encode(TEST_PASSWORD)).willReturn("encodedPassword");
 
             // when
             authService.signup(request);
@@ -110,7 +108,6 @@ class AuthServiceTest {
             // then
             then(emailVerificationTokenRepository).should().deleteByEmail(TEST_EMAIL);
             then(emailVerificationTokenRepository).should().save(any(EmailVerificationToken.class));
-            then(redisService).should().savePendingSignup(eq(TEST_EMAIL), any(PendingSignup.class), anyLong());
             then(emailService).should().sendVerificationEmail(eq(TEST_EMAIL), anyString());
         }
 
@@ -118,10 +115,12 @@ class AuthServiceTest {
         @DisplayName("비밀번호와 비밀번호 확인이 일치하지 않으면 예외가 발생한다")
         void signup_PasswordMismatch_ThrowsException() {
             // given
-            SignupRequest request = new SignupRequest(TEST_EMAIL, TEST_PASSWORD, "DifferentPassword!", TEST_NICKNAME);
+            SignupCompleteRequest request = new SignupCompleteRequest(
+                    TEST_EMAIL, TEST_PASSWORD, "DifferentPassword!", TEST_NICKNAME
+            );
 
             // when & then
-            assertThatThrownBy(() -> authService.signup(request))
+            assertThatThrownBy(() -> authService.completeSignup(request))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("code", ErrorCode.PASSWORD_MISMATCH);
         }
@@ -130,7 +129,7 @@ class AuthServiceTest {
         @DisplayName("이미 존재하는 이메일로 가입 시 예외가 발생한다")
         void signup_DuplicateEmail_ThrowsException() {
             // given
-            SignupRequest request = new SignupRequest(TEST_EMAIL, TEST_PASSWORD, TEST_PASSWORD, TEST_NICKNAME);
+            SignupRequest request = new SignupRequest(TEST_EMAIL);
             given(userRepository.existsByEmail(TEST_EMAIL)).willReturn(true);
 
             // when & then
@@ -143,12 +142,23 @@ class AuthServiceTest {
         @DisplayName("이미 존재하는 닉네임으로 가입 시 예외가 발생한다")
         void signup_DuplicateNickname_ThrowsException() {
             // given
-            SignupRequest request = new SignupRequest(TEST_EMAIL, TEST_PASSWORD, TEST_PASSWORD, TEST_NICKNAME);
+            SignupCompleteRequest request = new SignupCompleteRequest(
+                    TEST_EMAIL, TEST_PASSWORD, TEST_PASSWORD, TEST_NICKNAME
+            );
+            EmailVerificationToken verificationToken = EmailVerificationToken.builder()
+                    .email(TEST_EMAIL)
+                    .token(TEST_TOKEN)
+                    .expiresAt(LocalDateTime.now().plusMinutes(10))
+                    .isVerified(true)
+                    .build();
+
+            given(emailVerificationTokenRepository.findVerifiedByEmail(TEST_EMAIL))
+                    .willReturn(Optional.of(verificationToken));
             given(userRepository.existsByEmail(TEST_EMAIL)).willReturn(false);
             given(userRepository.existsByNickname(TEST_NICKNAME)).willReturn(true);
 
             // when & then
-            assertThatThrownBy(() -> authService.signup(request))
+            assertThatThrownBy(() -> authService.completeSignup(request))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("code", ErrorCode.DUPLICATE_NICKNAME);
         }
@@ -161,7 +171,7 @@ class AuthServiceTest {
     class VerifyEmailTest {
 
         @Test
-        @DisplayName("유효한 인증 코드로 인증 시 사용자가 생성되고 토큰이 발급된다")
+        @DisplayName("유효한 인증 코드로 인증 시 토큰이 검증 완료 처리된다")
         void verifyEmail_Success() {
             // given
             EmailVerifyRequest request = new EmailVerifyRequest(TEST_EMAIL, TEST_TOKEN);
@@ -173,40 +183,14 @@ class AuthServiceTest {
                     .isVerified(false)
                     .build();
 
-            PendingSignup pendingSignup = PendingSignup.builder()
-                    .email(TEST_EMAIL)
-                    .encodedPassword("encodedPassword")
-                    .nickname(TEST_NICKNAME)
-                    .build();
-
-            User savedUser = User.builder()
-                    .id(1L)
-                    .email(TEST_EMAIL)
-                    .nickname(TEST_NICKNAME)
-                    .password("encodedPassword")
-                    .build();
-
             given(emailVerificationTokenRepository.findByEmailAndToken(TEST_EMAIL, TEST_TOKEN))
                     .willReturn(Optional.of(verificationToken));
-            given(redisService.getPendingSignup(TEST_EMAIL, PendingSignup.class))
-                    .willReturn(Optional.of(pendingSignup));
-            given(userRepository.existsByEmail(TEST_EMAIL)).willReturn(false);
-            given(userRepository.save(any(User.class))).willReturn(savedUser);
-            given(jwtTokenUtil.createAccessToken(1L)).willReturn("accessToken");
-            given(jwtTokenUtil.createRefreshToken(1L)).willReturn("refreshToken");
-            given(jwtTokenUtil.getExpirationFromToken("refreshToken"))
-                    .willReturn(java.util.Date.from(LocalDateTime.now().plusDays(7)
-                            .atZone(java.time.ZoneId.systemDefault()).toInstant()));
 
             // when
-            AuthResponse response = authService.verifyEmail(request);
+            authService.verifyEmail(request);
 
             // then
-            assertThat(response).isNotNull();
-            assertThat(response.getAccessToken()).isEqualTo("accessToken");
-            assertThat(response.getRefreshToken()).isEqualTo("refreshToken");
-            assertThat(response.getIsNewUser()).isTrue();
-            then(redisService).should().deletePendingSignup(TEST_EMAIL);
+            assertThat(verificationToken.getIsVerified()).isTrue();
         }
 
         @Test

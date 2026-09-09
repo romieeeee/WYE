@@ -2,7 +2,7 @@
 샘플 데이터 삽입 스크립트
 
 사용법:
-    cd C:\SSAFY\project2team\backend\data-service
+    cd backend/data-service
     python -m scripts.seed_sample_data
 """
 import sys

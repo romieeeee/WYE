@@ -2,13 +2,23 @@ package com.whatsyouretf.userservice.domain.user.service;
 
 import com.whatsyouretf.userservice.common.exception.BusinessException;
 import com.whatsyouretf.userservice.common.exception.ErrorCode;
+import com.whatsyouretf.userservice.domain.ai.repository.PortfolioAiFeedbackRepository;
+import com.whatsyouretf.userservice.domain.alert.repository.FcmTokenRepository;
+import com.whatsyouretf.userservice.domain.alert.repository.UserAlertRepository;
+import com.whatsyouretf.userservice.domain.alert.repository.UserNotificationSettingRepository;
+import com.whatsyouretf.userservice.domain.etf.dto.EtfCurrentInfo;
 import com.whatsyouretf.userservice.domain.etf.entity.Etf;
-import com.whatsyouretf.userservice.domain.etf.entity.EtfPrice;
-import com.whatsyouretf.userservice.domain.etf.repository.EtfPriceRepository;
+import com.whatsyouretf.userservice.domain.etf.entity.EtfSector;
 import com.whatsyouretf.userservice.domain.etf.repository.EtfRepository;
+import com.whatsyouretf.userservice.domain.etf.service.EtfReader;
+import com.whatsyouretf.userservice.domain.portfolio.repository.PortfolioRepository;
+import com.whatsyouretf.userservice.domain.simulation.repository.SimulationRepository;
 import com.whatsyouretf.userservice.domain.user.dto.*;
 import com.whatsyouretf.userservice.domain.user.entity.User;
 import com.whatsyouretf.userservice.domain.user.entity.UserFavoriteEtf;
+import com.whatsyouretf.userservice.domain.user.repository.LoginHistoryRepository;
+import com.whatsyouretf.userservice.domain.user.repository.PasswordResetTokenRepository;
+import com.whatsyouretf.userservice.domain.user.repository.RefreshTokenRepository;
 import com.whatsyouretf.userservice.domain.user.repository.UserFavoriteEtfRepository;
 import com.whatsyouretf.userservice.domain.user.repository.UserHoldingEtfRepository;
 import com.whatsyouretf.userservice.domain.user.repository.UserRepository;
@@ -26,7 +36,9 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -53,7 +65,7 @@ class UserServiceTest {
     private EtfRepository etfRepository;
 
     @Mock
-    private EtfPriceRepository etfPriceRepository;
+    private EtfReader etfReader;
 
     @Mock
     private UserFavoriteEtfRepository userFavoriteEtfRepository;
@@ -61,10 +73,36 @@ class UserServiceTest {
     @Mock
     private UserHoldingEtfRepository userHoldingEtfRepository;
 
+    @Mock
+    private UserAlertRepository userAlertRepository;
+
+    @Mock
+    private UserNotificationSettingRepository userNotificationSettingRepository;
+
+    @Mock
+    private FcmTokenRepository fcmTokenRepository;
+
+    @Mock
+    private LoginHistoryRepository loginHistoryRepository;
+
+    @Mock
+    private PasswordResetTokenRepository passwordResetTokenRepository;
+
+    @Mock
+    private RefreshTokenRepository refreshTokenRepository;
+
+    @Mock
+    private PortfolioAiFeedbackRepository portfolioAiFeedbackRepository;
+
+    @Mock
+    private SimulationRepository simulationRepository;
+
+    @Mock
+    private PortfolioRepository portfolioRepository;
+
     // 테스트 데이터
     private User testUser;
     private Etf testEtf;
-    private EtfPrice testEtfPrice;
 
     @BeforeEach
     void setUp() {
@@ -82,19 +120,11 @@ class UserServiceTest {
                 .id(100L)
                 .stockCode("069500")
                 .name("KODEX 200")
-                .sector("국내주식형")
+                .sector(EtfSector.SEMI)
                 .assetManager("삼성자산운용")
                 .isActive(true)
                 .build();
 
-        // 테스트 ETF 시세 생성
-        testEtfPrice = EtfPrice.builder()
-                .id(1000L)
-                .etf(testEtf)
-                .tradeDate(LocalDate.now())
-                .close(BigDecimal.valueOf(35000))
-                .changeRate(BigDecimal.valueOf(1.25))
-                .build();
     }
 
     // ========== 사용자 정보 테스트 ==========
@@ -130,26 +160,26 @@ class UserServiceTest {
         }
 
         @Test
-        @DisplayName("회원 탈퇴 - 사용자가 비활성화된다")
-        void deactivateUser_Success() {
+        @DisplayName("회원 탈퇴 - 사용자와 관련 데이터가 삭제된다")
+        void deleteUser_Success() {
             // given
             given(userRepository.findById(1L)).willReturn(Optional.of(testUser));
 
             // when
-            userService.deactivateUser(1L);
+            userService.deleteUser(1L);
 
             // then
-            assertThat(testUser.getIsActive()).isFalse();
+            then(userRepository).should().delete(testUser);
         }
 
         @Test
         @DisplayName("회원 탈퇴 - 존재하지 않는 사용자인 경우 예외가 발생한다")
-        void deactivateUser_UserNotFound_ThrowsException() {
+        void deleteUser_UserNotFound_ThrowsException() {
             // given
             given(userRepository.findById(999L)).willReturn(Optional.empty());
 
             // when & then
-            assertThatThrownBy(() -> userService.deactivateUser(999L))
+            assertThatThrownBy(() -> userService.deleteUser(999L))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("code", ErrorCode.USER_NOT_FOUND);
         }
@@ -174,7 +204,15 @@ class UserServiceTest {
 
             given(userRepository.existsById(1L)).willReturn(true);
             given(userFavoriteEtfRepository.findAllByUserIdWithEtf(1L)).willReturn(List.of(favorite));
-            given(etfPriceRepository.findLatestByEtfIds(List.of(100L))).willReturn(List.of(testEtfPrice));
+            given(etfReader.getInfosMap(Set.of("069500"))).willReturn(Map.of(
+                    "069500",
+                    new EtfCurrentInfo(
+                            "069500", "KODEX 200",
+                            BigDecimal.valueOf(35000), BigDecimal.valueOf(34500),
+                            1000L, BigDecimal.valueOf(34900),
+                            BigDecimal.valueOf(1.25), BigDecimal.valueOf(500)
+                    )
+            ));
 
             // when
             FavoriteEtfListResponse response = userService.getFavoriteEtfs(1L, FavoriteSortType.RECENT);
@@ -183,7 +221,7 @@ class UserServiceTest {
             assertThat(response).isNotNull();
             assertThat(response.getTotalCount()).isEqualTo(1);
             assertThat(response.getFavorites()).hasSize(1);
-            assertThat(response.getFavorites().get(0).getStockCode()).isEqualTo("069500");
+            assertThat(response.getFavorites().get(0).getTicker()).isEqualTo("069500");
             assertThat(response.getFavorites().get(0).getCurrentPrice()).isEqualTo(BigDecimal.valueOf(35000));
         }
 
@@ -204,11 +242,11 @@ class UserServiceTest {
         void addFavoriteEtf_Success() {
             // given
             given(userRepository.findById(1L)).willReturn(Optional.of(testUser));
-            given(etfRepository.findById(100L)).willReturn(Optional.of(testEtf));
-            given(userFavoriteEtfRepository.existsByUserIdAndEtfId(1L, 100L)).willReturn(false);
+            given(etfRepository.findByStockCode("069500")).willReturn(Optional.of(testEtf));
+            given(userFavoriteEtfRepository.existsByUserIdAndTicker(1L, "069500")).willReturn(false);
 
             // when
-            userService.addFavoriteEtf(1L, 100L);
+            userService.addFavoriteEtf(1L, "069500");
 
             // then
             then(userFavoriteEtfRepository).should().save(any(UserFavoriteEtf.class));
@@ -221,7 +259,7 @@ class UserServiceTest {
             given(userRepository.findById(999L)).willReturn(Optional.empty());
 
             // when & then
-            assertThatThrownBy(() -> userService.addFavoriteEtf(999L, 100L))
+            assertThatThrownBy(() -> userService.addFavoriteEtf(999L, "069500"))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("code", ErrorCode.USER_NOT_FOUND);
         }
@@ -231,10 +269,10 @@ class UserServiceTest {
         void addFavoriteEtf_EtfNotFound_ThrowsException() {
             // given
             given(userRepository.findById(1L)).willReturn(Optional.of(testUser));
-            given(etfRepository.findById(999L)).willReturn(Optional.empty());
+            given(etfRepository.findByStockCode("999999")).willReturn(Optional.empty());
 
             // when & then
-            assertThatThrownBy(() -> userService.addFavoriteEtf(1L, 999L))
+            assertThatThrownBy(() -> userService.addFavoriteEtf(1L, "999999"))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("code", ErrorCode.ETF_NOT_FOUND);
         }
@@ -244,11 +282,11 @@ class UserServiceTest {
         void addFavoriteEtf_AlreadyFavorite_ThrowsException() {
             // given
             given(userRepository.findById(1L)).willReturn(Optional.of(testUser));
-            given(etfRepository.findById(100L)).willReturn(Optional.of(testEtf));
-            given(userFavoriteEtfRepository.existsByUserIdAndEtfId(1L, 100L)).willReturn(true);
+            given(etfRepository.findByStockCode("069500")).willReturn(Optional.of(testEtf));
+            given(userFavoriteEtfRepository.existsByUserIdAndTicker(1L, "069500")).willReturn(true);
 
             // when & then
-            assertThatThrownBy(() -> userService.addFavoriteEtf(1L, 100L))
+            assertThatThrownBy(() -> userService.addFavoriteEtf(1L, "069500"))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("code", ErrorCode.ALREADY_FAVORITE);
         }
@@ -263,11 +301,11 @@ class UserServiceTest {
                     .etf(testEtf)
                     .build();
 
-            given(userFavoriteEtfRepository.findByUserIdAndEtfId(1L, 100L))
+            given(userFavoriteEtfRepository.findByUserIdAndTicker(1L, "069500"))
                     .willReturn(Optional.of(favorite));
 
             // when
-            userService.removeFavoriteEtf(1L, 100L);
+            userService.removeFavoriteEtf(1L, "069500");
 
             // then
             then(userFavoriteEtfRepository).should().delete(favorite);
@@ -277,11 +315,11 @@ class UserServiceTest {
         @DisplayName("관심 ETF 삭제 - 존재하지 않는 관심 ETF인 경우 예외가 발생한다")
         void removeFavoriteEtf_NotFound_ThrowsException() {
             // given
-            given(userFavoriteEtfRepository.findByUserIdAndEtfId(1L, 999L))
+            given(userFavoriteEtfRepository.findByUserIdAndTicker(1L, "999999"))
                     .willReturn(Optional.empty());
 
             // when & then
-            assertThatThrownBy(() -> userService.removeFavoriteEtf(1L, 999L))
+            assertThatThrownBy(() -> userService.removeFavoriteEtf(1L, "999999"))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("code", ErrorCode.FAVORITE_NOT_FOUND);
         }
@@ -290,10 +328,10 @@ class UserServiceTest {
         @DisplayName("관심 ETF 여부 확인 - 등록된 경우 true를 반환한다")
         void isFavoriteEtf_Exists_ReturnsTrue() {
             // given
-            given(userFavoriteEtfRepository.existsByUserIdAndEtfId(1L, 100L)).willReturn(true);
+            given(userFavoriteEtfRepository.existsByUserIdAndTicker(1L, "069500")).willReturn(true);
 
             // when
-            boolean result = userService.isFavoriteEtf(1L, 100L);
+            boolean result = userService.isFavoriteEtf(1L, "069500");
 
             // then
             assertThat(result).isTrue();
@@ -303,10 +341,10 @@ class UserServiceTest {
         @DisplayName("관심 ETF 여부 확인 - 등록되지 않은 경우 false를 반환한다")
         void isFavoriteEtf_NotExists_ReturnsFalse() {
             // given
-            given(userFavoriteEtfRepository.existsByUserIdAndEtfId(1L, 100L)).willReturn(false);
+            given(userFavoriteEtfRepository.existsByUserIdAndTicker(1L, "069500")).willReturn(false);
 
             // when
-            boolean result = userService.isFavoriteEtf(1L, 100L);
+            boolean result = userService.isFavoriteEtf(1L, "069500");
 
             // then
             assertThat(result).isFalse();

@@ -30,9 +30,7 @@ frontend/WYE/
 │   ├── src/main/
 │   │   ├── java/com/d102/wye/    # 소스 코드
 │   │   └── res/                   # 리소스
-│   ├── keystore/
-│   │   └── debug.keystore         # 디버그 키스토어
-│   ├── google-services.json       # Firebase 설정
+│   ├── src/google-services.json   # Firebase 설정 (Git 제외)
 │   └── build.gradle.kts           # 앱 빌드 설정
 ├── gradle/
 │   └── libs.versions.toml         # 버전 카탈로그
@@ -59,8 +57,7 @@ KAKAO_NATIVE_APP_KEY={KAKAO_NATIVE_APP_KEY}
 
 | 파일 | 위치 | 설명 |
 |------|------|------|
-| `debug.keystore` | `app/keystore/` | 디버그 서명 키 |
-| `google-services.json` | `app/` | Firebase 설정 |
+| `google-services.json` | `app/src/` | Firebase 설정 |
 | `local.properties` | 프로젝트 루트 | SDK 경로, API 키 |
 
 ### 3.3 환경 변수
@@ -153,8 +150,7 @@ cd frontend/WYE
 | 에러 | 해결 방법 |
 |------|----------|
 | SDK not found | `local.properties`에 `sdk.dir` 설정 |
-| Keystore not found | `app/keystore/debug.keystore` 파일 확인 |
-| google-services.json missing | `app/google-services.json` 파일 확인 |
+| google-services.json missing | `app/src/google-services.json` 파일 확인 |
 | Gradle sync failed | File > Invalidate Caches 후 재시작 |
 
 ---
@@ -174,7 +170,7 @@ cd frontend/WYE
 **카카오 콘솔 설정 필요사항:**
 - 플랫폼 > Android 등록
 - 패키지명: `com.d102.wye`
-- 키 해시 등록 (debug.keystore 기준)
+- 키 해시 등록 (Android SDK가 생성한 기본 debug keystore 기준)
 
 ### 6.2 Firebase (FCM)
 
@@ -183,13 +179,13 @@ cd frontend/WYE
 | 서비스 | Firebase Cloud Messaging |
 | 용도 | 푸시 알림 |
 | 설정 파일 | `google-services.json` |
-| 파일 위치 | `app/` |
+| 파일 위치 | `app/src/` |
 | 콘솔 URL | https://console.firebase.google.com |
 
 **Firebase 콘솔 설정:**
 - 프로젝트 설정 > 일반 > Android 앱 추가
 - 패키지명: `com.d102.wye`
-- `google-services.json` 다운로드 후 `app/` 폴더에 배치
+- `google-services.json` 다운로드 후 `app/src/` 폴더에 배치
 
 ---
 
@@ -198,8 +194,7 @@ cd frontend/WYE
 ### 7.1 서명 설정
 
 **Debug 빌드:**
-- `app/keystore/debug.keystore` 사용
-- `build.gradle.kts`에 자동 설정됨
+- Android SDK가 생성하는 기본 debug keystore 사용
 
 **Release 빌드:**
 - 별도 Release Keystore 필요

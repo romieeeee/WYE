@@ -4,7 +4,7 @@
 회사 ↔ 산업분류, ETF ↔ 회사 구성종목 매핑 테스트
 
 사용법:
-    cd C:\SSAFY\project2team\backend\data-service
+    cd backend/data-service
     python -m scripts.test_mapping
 """
 import sys
