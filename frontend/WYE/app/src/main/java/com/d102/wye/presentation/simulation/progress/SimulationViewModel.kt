@@ -79,21 +79,37 @@ class SimulationViewModel @Inject constructor(
                 _simulationState.update { UiState.Loading }
                 _formState.update { it.copy(isFetchingEtfInfo = true) }
 
-                val newToBeFetched = newTickers.filter { !simulationRepository.hasCachedPriceHistory(it) }
+                // 1. 가격 이력 증분 업데이트
+                // 캐시가 있으면 마지막 저장일 다음 날부터, 없으면 최근 3년치를 조회한다.
+                val today = LocalDate.now()
+                val endDate = today.toString()
 
-                if (newToBeFetched.isNotEmpty()) {
-                    val endDate = LocalDate.now().toString()
-                    val startDate = LocalDate.now().minusYears(3).toString()
+                newTickers.forEach { ticker ->
+                    val lastCachedDate = simulationRepository.getLastCachedDate(ticker)
+                    val needsFetch = lastCachedDate == null || lastCachedDate < endDate
 
-                    when (val result = simulationRepository.getEtfPriceHistories(newToBeFetched, startDate, endDate)) {
-                        is BaseResult.Success -> {
-                            simulationRepository.savePriceHistories(result.data)
+                    if (needsFetch) {
+                        val fetchStart = if (lastCachedDate != null) {
+                            LocalDate.parse(lastCachedDate).plusDays(1).toString()
+                        } else {
+                            today.minusYears(3).toString()
                         }
-                        is BaseResult.Error -> {
-                            _simulationState.update { UiState.Error(result.error.message) }
-                            _formState.update { it.copy(isFetchingEtfInfo = false) }
-                            return@launch
+                        Timber.d("[Simulation] 증분 조회 | ticker=$ticker | $fetchStart ~ $endDate")
+
+                        when (val result = simulationRepository.getEtfPriceHistories(
+                            tickers = listOf(ticker),
+                            startDate = fetchStart,
+                            endDate = endDate
+                        )) {
+                            is BaseResult.Success -> simulationRepository.savePriceHistories(result.data)
+                            is BaseResult.Error -> {
+                                _simulationState.update { UiState.Error(result.error.message) }
+                                _formState.update { it.copy(isFetchingEtfInfo = false) }
+                                return@launch
+                            }
                         }
+                    } else {
+                        Timber.d("[Simulation] DB 캐시 사용 | ticker=$ticker | lastDate=$lastCachedDate")
                     }
                 }
 
