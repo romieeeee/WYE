@@ -14,6 +14,7 @@ import com.d102.wye.domain.repository.SimulationRepository
 import com.d102.wye.domain.state.InvestmentType
 import com.d102.wye.domain.usecase.portfolio.CalculatePortfolioChartUseCase
 import com.d102.wye.domain.usecase.simulation.RunSimulationUseCase
+import com.d102.wye.domain.usecase.simulation.RefreshPriceHistoryCacheUseCase
 import com.d102.wye.presentation.model.UiState
 import com.d102.wye.presentation.simulation.model.SimulationUiModel
 import com.d102.wye.presentation.simulation.model.toUiModel
@@ -38,7 +39,8 @@ class SimulationViewModel @Inject constructor(
     private val portfolioRepository: PortfolioRepository,
     private val etfRepository: EtfRepository,
     private val runSimulation: RunSimulationUseCase,
-    private val calculatePortfolioChart: CalculatePortfolioChartUseCase
+    private val calculatePortfolioChart: CalculatePortfolioChartUseCase,
+    private val refreshPriceHistoryCache: RefreshPriceHistoryCacheUseCase
 ) : ViewModel() {
 
     private val _formState = MutableStateFlow(SimulationFormState())
@@ -79,37 +81,13 @@ class SimulationViewModel @Inject constructor(
                 _simulationState.update { UiState.Loading }
                 _formState.update { it.copy(isFetchingEtfInfo = true) }
 
-                // 1. 가격 이력 증분 업데이트
-                // 캐시가 있으면 마지막 저장일 다음 날부터, 없으면 최근 3년치를 조회한다.
-                val today = LocalDate.now()
-                val endDate = today.toString()
-
-                newTickers.forEach { ticker ->
-                    val lastCachedDate = simulationRepository.getLastCachedDate(ticker)
-                    val needsFetch = lastCachedDate == null || lastCachedDate < endDate
-
-                    if (needsFetch) {
-                        val fetchStart = if (lastCachedDate != null) {
-                            LocalDate.parse(lastCachedDate).plusDays(1).toString()
-                        } else {
-                            today.minusYears(3).toString()
-                        }
-                        Timber.d("[Simulation] 증분 조회 | ticker=$ticker | $fetchStart ~ $endDate")
-
-                        when (val result = simulationRepository.getEtfPriceHistories(
-                            tickers = listOf(ticker),
-                            startDate = fetchStart,
-                            endDate = endDate
-                        )) {
-                            is BaseResult.Success -> simulationRepository.savePriceHistories(result.data)
-                            is BaseResult.Error -> {
-                                _simulationState.update { UiState.Error(result.error.message) }
-                                _formState.update { it.copy(isFetchingEtfInfo = false) }
-                                return@launch
-                            }
-                        }
-                    } else {
-                        Timber.d("[Simulation] DB 캐시 사용 | ticker=$ticker | lastDate=$lastCachedDate")
+                // 1. 공통 캐시 정책에 따라 필요한 가격 이력만 갱신
+                when (val result = refreshPriceHistoryCache(newTickers)) {
+                    is BaseResult.Success -> Unit
+                    is BaseResult.Error -> {
+                        _simulationState.update { UiState.Error(result.error.message) }
+                        _formState.update { it.copy(isFetchingEtfInfo = false) }
+                        return@launch
                     }
                 }
 
@@ -407,21 +385,15 @@ class SimulationViewModel @Inject constructor(
             if (detailResult !is BaseResult.Success) return@launch
             val detail = detailResult.data
 
-            // 3. 가격 이력 증분 업데이트 (메인 시뮬레이션과 동일한 기간 기준)
+            // 3. 공통 캐시 정책에 따라 가격 이력 갱신
             val tickers = detail.counts.map { it.ticker }
             val today = LocalDate.now()
-            val endDate = today.toString()
             val startDate = today.minusMonths(periodMonths.toLong()).toString()
 
-            tickers.forEach { ticker ->
-                val lastCachedDate = simulationRepository.getLastCachedDate(ticker)
-                val needsFetch = lastCachedDate == null || lastCachedDate < endDate
-                if (needsFetch) {
-                    val fetchStart = lastCachedDate?.let { LocalDate.parse(it).plusDays(1).toString() } ?: today.minusYears(3).toString()
-                    when (val res = simulationRepository.getEtfPriceHistories(listOf(ticker), fetchStart, endDate)) {
-                        is BaseResult.Success -> simulationRepository.savePriceHistories(res.data)
-                        is BaseResult.Error -> Timber.e("[Overlay] 가격 이력 실패: ${res.error.message}")
-                    }
+            when (val result = refreshPriceHistoryCache(tickers)) {
+                is BaseResult.Success -> Unit
+                is BaseResult.Error -> {
+                    Timber.e("[Overlay] 가격 이력 갱신 실패: ${result.error.message}")
                 }
             }
 

@@ -47,11 +47,6 @@ interface SimulationRepository {
     suspend fun getCachedPriceHistories(tickers: List<String>): Map<String, EtfPriceHistory>
 
     /**
-     * 로컬 DB에 해당 ticker 데이터가 있는지 확인
-     */
-    suspend fun hasCachedPriceHistory(ticker: String): Boolean
-
-    /**
      * ETF 제거 시 로컬 DB 캐시도 삭제
      */
     suspend fun deleteCachedPriceHistory(ticker: String)
@@ -60,6 +55,20 @@ interface SimulationRepository {
      * 최근에 저장된 날짜 조회
      */
     suspend fun getLastCachedDate(ticker: String): String?
+
+    /**
+     * 가격 이력 API가 마지막으로 성공한 시각. 새 가격 행이 없는 휴장일에도 기록된다.
+     */
+    suspend fun getLastSuccessfulPriceHistorySync(ticker: String): Long?
+
+    suspend fun markPriceHistorySyncSuccessful(ticker: String, syncedAtEpochMillis: Long)
+
+    suspend fun markPriceHistoryCacheAccessed(tickers: List<String>, accessedAtEpochMillis: Long)
+
+    /**
+     * 마지막 사용 시각이 기준보다 오래된 ETF의 가격 이력과 메타데이터를 삭제한다.
+     */
+    suspend fun deleteUnusedPriceHistoryCache(cutoffEpochMillis: Long)
 
     suspend fun getPresetList(): BaseResult<List<EtfBundle>>
     suspend fun getPresetDetail(presetId: Int): BaseResult<EtfBundleDetail>

@@ -1,5 +1,6 @@
 package com.d102.wye.data.repository
 
+import com.d102.wye.data.local.dao.EtfPriceCacheSyncDao
 import com.d102.wye.data.local.dao.EtfPriceHistoryDao
 import com.d102.wye.data.local.entity.EtfPriceHistoryEntity
 import com.d102.wye.data.mapper.toDomain
@@ -27,7 +28,8 @@ import javax.inject.Inject
 
 class SimulationRepositoryImpl @Inject constructor(
     private val simulationApiService: SimulationApiService,
-    private val priceHistoryDao: EtfPriceHistoryDao
+    private val priceHistoryDao: EtfPriceHistoryDao,
+    private val priceCacheSyncDao: EtfPriceCacheSyncDao
 ) : SimulationRepository {
 
     // ─── API ─────────────────────────────────────────────────────────────────
@@ -216,12 +218,31 @@ class SimulationRepositoryImpl @Inject constructor(
         }.filter { it.value.content.isNotEmpty() }
     }
 
-    override suspend fun hasCachedPriceHistory(ticker: String): Boolean =
-        priceHistoryDao.countByTicker(ticker) > 0
-
-    override suspend fun deleteCachedPriceHistory(ticker: String) =
+    override suspend fun deleteCachedPriceHistory(ticker: String) {
         priceHistoryDao.deleteByTicker(ticker)
+        priceCacheSyncDao.deleteByTicker(ticker)
+    }
 
     override suspend fun getLastCachedDate(ticker: String): String? =
         priceHistoryDao.getLastCachedDate(ticker)
+
+    override suspend fun getLastSuccessfulPriceHistorySync(ticker: String): Long? =
+        priceCacheSyncDao.getLastSuccessfulSyncEpochMillis(ticker)
+
+    override suspend fun markPriceHistorySyncSuccessful(
+        ticker: String,
+        syncedAtEpochMillis: Long
+    ) = priceCacheSyncDao.markSyncSuccessful(ticker, syncedAtEpochMillis)
+
+    override suspend fun markPriceHistoryCacheAccessed(
+        tickers: List<String>,
+        accessedAtEpochMillis: Long
+    ) {
+        tickers.distinct().forEach { ticker ->
+            priceCacheSyncDao.touch(ticker, accessedAtEpochMillis)
+        }
+    }
+
+    override suspend fun deleteUnusedPriceHistoryCache(cutoffEpochMillis: Long) =
+        priceCacheSyncDao.deleteUnusedBefore(cutoffEpochMillis)
 }
